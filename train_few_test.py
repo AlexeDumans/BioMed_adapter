@@ -81,7 +81,7 @@ def main():
 
 
     # load test dataset
-    kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
+    kwargs = {'num_workers': 12, 'pin_memory': True} if use_cuda else {}
     test_dataset = MedDataset(args.data_path, args.obj, args.img_size, args.shot, args.iterate)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
@@ -96,12 +96,12 @@ def main():
     augment_fewshot_label = torch.cat([torch.Tensor([1] * len(augment_abnorm_img)), torch.Tensor([0] * len(augment_normal_img))], dim=0)
 
     train_dataset = torch.utils.data.TensorDataset(augment_fewshot_img, augment_fewshot_mask, augment_fewshot_label)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
 
     # memory bank construction
     support_dataset = torch.utils.data.TensorDataset(augment_normal_img)
-    support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=1, shuffle=True, **kwargs)
+    support_loader = torch.utils.data.DataLoader(support_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
 
     # losses
@@ -123,19 +123,25 @@ def main():
         loss_list = []
         for (image, gt, label) in train_loader:
             image = image.to(device)
+            print(image.shape)
             with torch.cuda.amp.autocast():
                 _, seg_patch_tokens, det_patch_tokens = model(image)
+                # seg_patch_tokens size { [batch_size,196,512] * 4} 
                 seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
                 det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
-                    
+
                 # det loss
                 det_loss = 0
                 image_label = label.to(device)
                 for layer in range(len(det_patch_tokens)):
                     det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    print(det_patch_tokens[layer].shape)
                     anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)    
+                    print(anomaly_map.shape)
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                    print(anomaly_map.shape)
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
+                    print(anomaly_score.shape)
                     det_loss += loss_bce(anomaly_score, image_label)
 
                 if CLASS_INDEX[args.obj] > 0:

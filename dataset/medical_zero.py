@@ -72,7 +72,7 @@ class MedTrainDataset(Dataset):
 
     def load_dataset_folder(self):
         data_img = {}
-        for class_name_one in CLASS_NAMES:
+        for class_name_one in ['Brain', 'Liver']:
             if class_name_one != self.class_name:
                 data_img[class_name_one] = []
                 img_dir = os.path.join(self.dataset_path, f'{class_name_one}_AD/test/good/img')
