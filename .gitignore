@@ -3,8 +3,9 @@ data/
 !data/__init__.py
 checkpoints/
 !checkpoints/__init__.py
-**/__pycache__/
 CLIP/ckpt/
 !CLIP/ckpt/__init__.py
+**/__pycache__/
+
 
 
