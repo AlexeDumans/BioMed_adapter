@@ -42,7 +42,7 @@ def setup_seed(seed):
 def main():
     parser = argparse.ArgumentParser(description='Testing')
     parser.add_argument('--model_name', type=str, default='biomedclip_local',)
-    parser.add_argument('--pretrain', type=str, default='checkpoints/open_clip_pytorch_model.bin')
+    parser.add_argument('--pretrain', type=str, default='CLIP/ckpt/open_clip_pytorch_model.bin')
     parser.add_argument('--obj', type=str, default='Liver')
     parser.add_argument('--data_path', type=str, default='/root/data/')
     parser.add_argument('--batch_size', type=int, default=1)
