@@ -1,0 +1,6 @@
+*.pyc
+data/
+checkpoints/
+**/__pycache__/
+CLIP/ckpt/BiomedNLP-BiomedBERT-base-uncased-abstract/
+
