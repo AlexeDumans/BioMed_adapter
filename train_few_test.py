@@ -290,19 +290,15 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     anomaly_score += anomaly_map.mean(dim=1)
                 det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
-            
-            gt_mask_list.append(mask.squeeze().cpu().detach().numpy())
+            # ?  在batch_size = 4 , 对于Liver数据集来说，最后会有一张image被单独留下， 可能是 .squeeze() 配合之前的’展开代码‘ 的问题
+            gt_mask_list.append(mask.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
             
 
     gt_list = np.array(gt_list)
     
     # * 多batch展平
-    gt_mask_list = [
-        gt_mask_list[j][i] if len(gt_mask_list[j].shape) > 2 else gt_mask_list[j]
-            for j in range(len(gt_mask_list))        # 先遍历元素索引 j
-            for i in range(gt_mask_list[j].shape[0])  # 再遍历元素内部的样本索引 i
-            ]
+    gt_mask_list = np.concatenate(gt_mask_list,axis=0)
     gt_mask_list = np.asarray(gt_mask_list)
     gt_mask_list = (gt_mask_list>0).astype(np.int_)
 
@@ -320,7 +316,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
 
         seg_score_map_zero = np.array(seg_score_map_zero)
         seg_score_map_few = np.array(seg_score_map_few)
-
+        
         seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min())
         seg_score_map_few = (seg_score_map_few - seg_score_map_few.min()) / (seg_score_map_few.max() - seg_score_map_few.min())
     
