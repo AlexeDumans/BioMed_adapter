@@ -278,7 +278,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     anomaly_maps_few_shot.append(np.stack(batch_cos_sim, axis=0))
                     # print('anomaly_maps_few_shot.shape:', anomaly_maps_few_shot[0].shape)
                 anomaly_map_few_shot = np.sum(anomaly_maps_few_shot, axis=0)
-                score_few_det = anomaly_map_few_shot.mean()
+                score_few_det = anomaly_map_few_shot.mean(axis=(1,2,3))
                 det_image_scores_few.append(score_few_det)
 
                 # zero-shot, det head
@@ -287,7 +287,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
                     anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features)
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                    anomaly_score += anomaly_map.mean()
+                    anomaly_score += anomaly_map.mean(dim=1)
                 det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
             
@@ -337,15 +337,8 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
     else:
 
         # * 多batch展平
-        det_image_scores_zero = [det_image_scores_zero[j][i] if len(det_image_scores_zero[j].shape) > 2 else det_image_scores_zero[j]
-            for j in range(len(det_image_scores_zero))        # 先遍历元素索引 j
-            for i in range(det_image_scores_zero[j].shape[0])  # 再遍历元素内部的样本索引 i
-            ]
-        det_image_scores_few = [det_image_scores_few[j][i] if len(det_image_scores_few[j].shape) > 2 else det_image_scores_few[j]
-            for j in range(len(det_image_scores_few))        # 先遍历元素索引 j
-            for i in range(det_image_scores_few[j].shape[0])  # 再遍历元素内部的样本索引 i
-            ]
-        
+        det_image_scores_zero = np.concatenate(det_image_scores_zero)
+        det_image_scores_few = np.concatenate(det_image_scores_few)
         det_image_scores_zero = np.array(det_image_scores_zero)
         det_image_scores_few = np.array(det_image_scores_few)
 
