@@ -1,8 +1,8 @@
 *.pyc
 data/
 !data/__init__.py
-checkpoints/
-!checkpoints/__init__.py
+ckpt/
+!ckpt/__init__.py
 CLIP/ckpt/
 !CLIP/ckpt/__init__.py
 **/__pycache__/
