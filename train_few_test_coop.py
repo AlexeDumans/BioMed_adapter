@@ -69,7 +69,7 @@ def main():
     biomedclip_model.eval()
 
     # 模型添加适配器
-    model = CLIP_Inplanted(clip_model=biomedclip_model, args.obj,tokenizer=tokenizer, features=args.features_list).to(device)
+    model = CLIP_Inplanted(clip_model=biomedclip_model, obj=args.obj,tokenizer=tokenizer, features=args.features_list).to(device)
     model.eval()
 
     for name, param in model.named_parameters():
@@ -139,7 +139,7 @@ def main():
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
                 
-                loss_ce = F.cross_entropy(logits,label)
+                loss_ce = F.cross_entropy(logits,image_label.long())
                 
                 # Now calculate the frozen pre-trained features
                 fixed_embeddings =  model.prompt_learner.fixed_embeddings # precomputed pre-trained frozen textual features
@@ -198,7 +198,7 @@ def main():
                         seg_loss += loss_focal(anomaly_map, mask)
                         seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
                     
-                    loss = seg_loss * 0.5 + det_loss * 0.5 + loss_bce + loss_sccm + loss_kdsp
+                    loss = seg_loss * 0.5 + det_loss * 0.5 + loss_ce + loss_sccm + loss_kdsp
                     loss.requires_grad_(True)
                     seg_optimizer.zero_grad()
                     det_optimizer.zero_grad()
@@ -209,7 +209,7 @@ def main():
                     det_optimizer.step()
 
                 else:
-                    loss = det_loss * 0.5 + loss_bce + loss_sccm + loss_kdsp
+                    loss = det_loss * 0.5 + loss_ce + loss_sccm + loss_kdsp
                     loss.requires_grad_(True)
                     det_optimizer.zero_grad()
                     ctx_optimizer.zero_grad()
