@@ -69,7 +69,7 @@ def main():
     biomedclip_model.eval()
 
     # 模型添加适配器
-    model = CLIP_Inplanted(clip_model=biomedclip_model,tokenizer=tokenizer, features=args.features_list).to(device)
+    model = CLIP_Inplanted(clip_model=biomedclip_model, args.obj,tokenizer=tokenizer, features=args.features_list).to(device)
     model.eval()
 
     for name, param in model.named_parameters():
