@@ -69,7 +69,7 @@ class PromptLearner(nn.Module):
         self.ctx = nn.Parameter(ctx_vectors)
         
         # 多模板的异常分类
-        prompt_normal = ['{}', 'flawless {}', 'perfect {}', 'unblemished {}', '{} without flaw', '{} without defect', '{} without damage']
+        prompt_normal = [ 'flawless {}', 'perfect {}', 'unblemished {}', '{} without flaw', '{} without defect']
         prompt_abnormal = ['damaged {}', 'broken {}', '{} with flaw', '{} with defect', '{} with damage']
         prompt_state = [prompt_normal, prompt_abnormal]
         text_features = []
@@ -80,16 +80,17 @@ class PromptLearner(nn.Module):
                 prompted_sentence.append(ctx_init + " " + s)
             # prompted_sentence = tokenize(prompted_sentence).to(device)
             prompted_sentence = self.tokenizer(prompted_sentence)
-            prompted_sentence = torch.tensor(prompted_sentence).cuda().float()
-            prompted_sentence = prompted_sentence.mean(dim=0)
+            prompted_sentence = torch.tensor(prompted_sentence).cuda()
+            # prompted_sentence = prompted_sentence.mean(dim=0)
             text_features.append(prompted_sentence)
-        tokenized_prompts = torch.stack(text_features, dim=0).cuda().long() # (n_cls, n_tkn)
+        tokenized_prompts = torch.stack(text_features, dim=0).cuda() # (n_cls, n_tkn)
 
         # tokenized_prompts = torch.cat([self.tokenizer(p) for p in prompts])  # (n_cls, n_tkn)
         # Also create frozen CLIP
         biomedclip_model_temp = self.biomedclip_model.float().eval().cuda()
         with torch.no_grad():
             embedding = biomedclip_model.text.transformer.embeddings.word_embeddings(tokenized_prompts).type(dtype)
+            embedding = embedding.mean(dim=1)# (n_cls, 1, dim)
             self.ZS_image_encoder = biomedclip_model_temp.visual
             # Now pre-compute the frozen VL embeddings
             all_teacher_features = []
