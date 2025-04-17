@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
     
-from CLIP.adapter import CLIP_Inplanted
+from CLIP.adaptercoop import CLIP_Inplanted
 from CLIP.clip import create_model
 
 from loss import FocalLoss, BinaryDiceLoss
@@ -76,21 +76,13 @@ def main():
     checkpoint = torch.load(os.path.join(f'{args.save_path}', f'{args.obj}.pth'))
     model.seg_adapters.load_state_dict(checkpoint["seg_adapters"])
     model.det_adapters.load_state_dict(checkpoint["det_adapters"])
-
+    model.prompt_learner.load_state_dict(checkpoint["prompt_learner"])
 
     # load dataset and loader
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
 
     test_dataset = MedTestDataset(args.data_path, args.obj, args.img_size)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
-
-
-    text_feature_list = [0]
-    # text prompt
-    with torch.cuda.amp.autocast(), torch.no_grad():
-        for i in [1,2,3,-3,-2,-1]:
-            text_feature = encode_text_with_prompt_ensemble(biomedclip_model, tokenizer, REAL_NAME[CLASS_INDEX_INV[i]], device)
-            text_feature_list.append(text_feature) 
 
     score = test(args, model, test_loader)
         

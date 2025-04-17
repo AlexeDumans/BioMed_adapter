@@ -3,7 +3,6 @@ import argparse
 import random
 import math
 import numpy as np
-import time
 
 import torch
 from torch.nn import functional as F
@@ -38,8 +37,6 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-
-
 def main():
     parser = argparse.ArgumentParser(description='Testing')
     parser.add_argument('--model_name', type=str, default='biomedclip_local',)
@@ -47,7 +44,6 @@ def main():
     parser.add_argument('--obj', type=str, default='Liver')
     parser.add_argument('--data_path', type=str, default='/root/data/')
     parser.add_argument('--batch_size', type=int, default=1)
-    parser.add_argument('--save_model', type=int, default=1)
     parser.add_argument('--save_path', type=str, default='./ckpt/few-shot/')
     parser.add_argument('--img_size', type=int, default=224)
     parser.add_argument("--epoch", type=int, default=50, help="epochs")

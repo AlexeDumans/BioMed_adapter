@@ -111,8 +111,8 @@ def main():
                 print('\n')
             idx += 1
 
-            image = image.squeeze(0).to(device)
-            seg_idx = seg_idx.item()
+            image = image.to(device)
+            seg_idx = seg_idx[0].item()
 
             with torch.cuda.amp.autocast():
                 image_features, text_features, seg_patch_tokens, det_patch_tokens, logits = model(image)
@@ -121,10 +121,10 @@ def main():
 
                 # image level
                 det_loss = 0
-                image_label = image_label.squeeze(0).to(device)
+                image_label = image_label.to(device)
                 for layer in range(len(det_patch_tokens)):
                     det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features.t()).unsqueeze(0)    
+                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features.t())    
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
@@ -173,11 +173,11 @@ def main():
                 if seg_idx > 0:
                     # pixel level
                     seg_loss = 0
-                    mask = mask.squeeze(0).to(device)
+                    mask = mask.to(device)
                     mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
                     for layer in range(len(seg_patch_tokens)):
                         seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features.t()).unsqueeze(0)
+                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features.t())
                         B, L, C = anomaly_map.shape
                         H = int(np.sqrt(L))
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
