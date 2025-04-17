@@ -240,7 +240,7 @@ def main():
         # det_mem_features = [torch.cat([det_features[j][i] for j in range(len(det_features))], dim=0) for i in range(len(det_features[0]))]
         
 
-        result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
+        result = test(args, model, test_loader,seg_mem_features, det_mem_features)
         if result > best_result:
             best_result = result
             print("Best result\n")
@@ -252,7 +252,7 @@ def main():
                             ckp_path)
           
 
-def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
+def test(args, model, test_loader, seg_mem_features, det_mem_features):
     gt_list = []
     gt_mask_list = []
     logits_list = []
@@ -270,7 +270,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
-            _, _, seg_patch_tokens, det_patch_tokens, logits = model(image)
+            _, text_features, seg_patch_tokens, det_patch_tokens, logits = model(image)
             seg_patch_tokens = [p[:, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[:, 1:, :] for p in det_patch_tokens]
 
