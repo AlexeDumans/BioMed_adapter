@@ -262,6 +262,8 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
     
     seg_score_map_zero = []
     seg_score_map_few= []
+    seg_logit_map_few= []
+        
 
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
@@ -290,7 +292,9 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     anomaly_maps_few_shot.append(np.stack(batch_cos_sim, axis=0))
                     # print('anomaly_maps_few_shot.shape:', anomaly_maps_few_shot[0].shape)
                 score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
+                logit_score_few = score_map_few.mean(axis=(1,2,3))
                 seg_score_map_few.append(score_map_few)
+                seg_logit_map_few.append(logit_score_few)
 
 
                 # zero-shot, seg head
@@ -381,6 +385,11 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
         print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
         
+        
+        seg_logit_map_few = np.concatenate(seg_logit_map_few)
+        seg_logit_map_few = np.array(seg_logit_map_few)
+        seg_logit_map_few = (seg_logit_map_few - seg_logit_map_few.min()) / (seg_logit_map_few.max() - seg_logit_map_few.min())
+        logits_list = 0.5 * seg_logit_map_few + 0.5 * logits_list
         roc_auc_im = roc_auc_score(gt_list, logits_list)
         print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
 
