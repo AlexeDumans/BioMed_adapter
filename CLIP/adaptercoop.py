@@ -10,6 +10,8 @@ from PIL import Image
 from prompt import BIOMEDCOOP_TEMPLATES
 import copy
 
+CLASSNAMES = {'Brain': [ "normal brain","glioma tumor"], 'Liver':["normal liver" , "liver tumor"], 'Retina_RESC': ['normal retina', 'retinal edema'], 'Chest': ['normal chest x-ray' , 'thoracic abnormlaity'], 'Retina_OCT2017':['normal retina', 'retinal pathology'], 'Histopathology': ['normal tissue', 'metastatic tumor'] }
+
 # Residual CLIP Adapter
 class ClipAdapter(nn.Module):
     def __init__(self, c_in, bottleneck=768):
@@ -96,7 +98,7 @@ class PromptLearner(nn.Module):
             all_teacher_features = []
 
             for i in range(50):
-                x_tokenized = torch.cat([self.tokenizer(BIOMEDCOOP_TEMPLATES[classname][i]) for classname in [ "normal brain","glioma tumor"] ])
+                x_tokenized = torch.cat([self.tokenizer(BIOMEDCOOP_TEMPLATES[classname][i]) for classname in CLASSNAMES[obj]])
 
                 text_features = biomedclip_model_temp.encode_text(x_tokenized.cuda())
                 all_teacher_features.append(text_features.unsqueeze(1))

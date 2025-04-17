@@ -3,6 +3,7 @@ import argparse
 import random
 import math
 import numpy as np
+import time
 
 import torch
 from torch.nn import functional as F
@@ -69,7 +70,7 @@ def main():
     biomedclip_model.eval()
 
     # 模型添加适配器
-    model = CLIP_Inplanted(clip_model=biomedclip_model, obj = args.obj,features=args.features_list).to(device)
+    model = CLIP_Inplanted(clip_model=biomedclip_model, obj = args.obj,tokenizer=tokenizer,features=args.features_list).to(device)
     model.eval()
 
     checkpoint = torch.load(os.path.join(f'{args.save_path}', f'{args.obj}_coop.pth'))
@@ -101,7 +102,7 @@ def main():
     for image in support_loader:
         image = image[0].to(device)
         with torch.no_grad():
-            _, text_features, seg_patch_tokens, det_patch_tokens, _ = model(image)
+            _, _, seg_patch_tokens, det_patch_tokens, _ = model(image)
             seg_patch_tokens = [p.contiguous() for p in seg_patch_tokens]
             det_patch_tokens = [p.contiguous() for p in det_patch_tokens]
             seg_features.append(seg_patch_tokens)
@@ -111,26 +112,28 @@ def main():
     # seg_mem_features = [torch.cat([seg_features[j][i] for j in range(len(seg_features))], dim=0) for i in range(len(seg_features[0]))]
     # det_mem_features = [torch.cat([det_features[j][i] for j in range(len(det_features))], dim=0) for i in range(len(det_features[0]))]
     
+    test(args, model, test_loader, seg_mem_features, det_mem_features)
 
-    result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
 
-
-def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
+def test(args, model, test_loader, seg_mem_features, det_mem_features):
     gt_list = []
     gt_mask_list = []
+    logits_list = []
 
     det_image_scores_zero = []
     det_image_scores_few = []
     
     seg_score_map_zero = []
     seg_score_map_few= []
+    seg_logit_map_few= []
+        
 
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
-            _, _, seg_patch_tokens, det_patch_tokens,_ = model(image)
+            _, text_features, seg_patch_tokens, det_patch_tokens, logits = model(image)
             seg_patch_tokens = [p[:, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[:, 1:, :] for p in det_patch_tokens]
 
@@ -151,7 +154,10 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     anomaly_maps_few_shot.append(np.stack(batch_cos_sim, axis=0))
                     # print('anomaly_maps_few_shot.shape:', anomaly_maps_few_shot[0].shape)
                 score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
-                seg_score_map_few.append(score_map_few)
+                logit_score_few = score_map_few.mean(axis=(1,2,3))
+                seg_score_map_few.extend(score_map_few)
+                seg_logit_map_few.extend(logit_score_few)
+
 
                 # zero-shot, seg head
                 anomaly_maps = []
@@ -167,7 +173,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1:2, :, :]
                     anomaly_maps.append(anomaly_map.cpu().numpy())
                 score_map_zero = np.sum(anomaly_maps, axis=0)
-                seg_score_map_zero.append(score_map_zero)
+                seg_score_map_zero.extend(score_map_zero)
                 
 
 
@@ -188,7 +194,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     # print('anomaly_maps_few_shot.shape:', anomaly_maps_few_shot[0].shape)
                 anomaly_map_few_shot = np.sum(anomaly_maps_few_shot, axis=0)
                 score_few_det = anomaly_map_few_shot.mean(axis=(1,2,3))
-                det_image_scores_few.append(score_few_det)
+                det_image_scores_few.extend(score_few_det)
 
                 # zero-shot, det head
                 anomaly_score = 0
@@ -197,17 +203,18 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                     anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features.t())
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score += anomaly_map.mean(dim=1)
-                det_image_scores_zero.append(anomaly_score.cpu().numpy())
+                det_image_scores_zero.extend(anomaly_score.cpu().numpy())
 
-            
-            gt_mask_list.append(mask.cpu().detach().numpy())
+            gt_mask_list.extend(mask.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
             
+            logits = torch.softmax(logits, dim=1)[:,1]
+            logits_list.extend(logits.cpu().detach().numpy())
 
     gt_list = np.array(gt_list)
-    # * 多batch展平
-    gt_mask_list = np.concatenate(gt_mask_list,axis=0)
-    gt_mask_list = np.asarray(gt_mask_list)
+    logits_list = np.array(logits_list)
+    
+    gt_mask_list = np.array(gt_mask_list)
     gt_mask_list = (gt_mask_list>0).astype(np.int_)
 
 
@@ -223,7 +230,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
 
         seg_score_map_zero = np.array(seg_score_map_zero)
         seg_score_map_few = np.array(seg_score_map_few)
-
+        
         seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min())
         seg_score_map_few = (seg_score_map_few - seg_score_map_few.min()) / (seg_score_map_few.max() - seg_score_map_few.min())
     
@@ -234,6 +241,13 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         segment_scores_flatten = segment_scores.reshape(segment_scores.shape[0], -1)
         roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
         print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
+        
+        seg_logit_map_few = np.concatenate(seg_logit_map_few)
+        seg_logit_map_few = np.array(seg_logit_map_few)
+        seg_logit_map_few = (seg_logit_map_few - seg_logit_map_few.min()) / (seg_logit_map_few.max() - seg_logit_map_few.min())
+        logits_list = 0.5 * seg_logit_map_few + 0.5 * logits_list
+        roc_auc_im = roc_auc_score(gt_list, logits_list)
+        print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
 
         return seg_roc_auc + roc_auc_im
 
@@ -241,9 +255,6 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         # * 多batch展平
         det_image_scores_zero = np.concatenate(det_image_scores_zero)
         det_image_scores_few = np.concatenate(det_image_scores_few)
-        det_image_scores_zero = np.array(det_image_scores_zero)
-        det_image_scores_few = np.array(det_image_scores_few)
-
         det_image_scores_zero = np.array(det_image_scores_zero)
         det_image_scores_few = np.array(det_image_scores_few)
 
