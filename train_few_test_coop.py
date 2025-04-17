@@ -255,6 +255,7 @@ def main():
 def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
     gt_list = []
     gt_mask_list = []
+    logits_list = []
 
     det_image_scores_zero = []
     det_image_scores_few = []
@@ -267,7 +268,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
-            _, _, seg_patch_tokens, det_patch_tokens, _ = model(image)
+            _, _, seg_patch_tokens, det_patch_tokens, logits = model(image)
             seg_patch_tokens = [p[:, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[:, 1:, :] for p in det_patch_tokens]
 
@@ -342,8 +343,12 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
             gt_mask_list.append(mask.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
             
+            logits = torch.softmax(logits, dim=1)[:,1]
+            logits_list.extend(logits.cpu().detach().numpy())
+            
 
     gt_list = np.array(gt_list)
+    logits_list = np.array(logits_list)
     
     # * 多batch展平
     gt_mask_list = np.concatenate(gt_mask_list,axis=0)
@@ -374,6 +379,9 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
 
         segment_scores_flatten = segment_scores.reshape(segment_scores.shape[0], -1)
         roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
+        print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
+        
+        roc_auc_im = roc_auc_score(gt_list, logits_list)
         print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
 
         return seg_roc_auc + roc_auc_im
