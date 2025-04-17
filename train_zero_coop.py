@@ -3,7 +3,6 @@ import argparse
 import random
 import math
 import numpy as np
-import time
 
 import torch
 from torch.nn import functional as F
@@ -77,10 +76,10 @@ def main():
     ctx_optimizer = torch.optim.Adam([model.prompt_learner.ctx], lr=args.learning_rate, betas=(0.5, 0.999))
 
     # load dataset and loader
-    kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
+    kwargs = {'num_workers': 12, 'pin_memory': True} if use_cuda else {}
     print(args.obj)
     train_dataset = MedTrainDataset(args.data_path, args.obj, args.img_size, args.batch_size)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
     test_dataset = MedTestDataset(args.data_path, args.obj, args.img_size)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
@@ -209,7 +208,7 @@ def main():
                 loss_list.append(loss.item())
 
         train_dataset.shuffle_dataset()
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
         # logs
         print("Loss: ", np.mean(loss_list))
@@ -226,43 +225,57 @@ def test(args, model, test_loader):
 
         with torch.no_grad(), torch.cuda.amp.autocast():
             _, text_features, seg_patch_tokens, det_patch_tokens, _ = model(image)
-            seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
-            det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+            seg_patch_tokens = [p[:, 1:, :] for p in seg_patch_tokens]
+            det_patch_tokens = [p[:, 1:, :] for p in det_patch_tokens]
             
             # image
             anomaly_score = 0
             patch_tokens = det_patch_tokens.copy()
             for layer in range(len(patch_tokens)):
                 patch_tokens[layer] /= patch_tokens[layer].norm(dim=-1, keepdim=True)
-                anomaly_map = (100.0 * patch_tokens[layer] @ text_features.t()).unsqueeze(0)
+                anomaly_map = (100.0 * patch_tokens[layer] @ text_features.t())
                 anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                anomaly_score += anomaly_map.mean()
-            image_scores.append(anomaly_score.cpu())
+            anomaly_score += anomaly_map.mean(dim = 1 )
+            image_scores.append(anomaly_score.cpu().numpy())
 
             # pixel
             patch_tokens = seg_patch_tokens
             anomaly_maps = []
             for layer in range(len(patch_tokens)):
                 patch_tokens[layer] /= patch_tokens[layer].norm(dim=-1, keepdim=True)
-                anomaly_map = (100.0 * patch_tokens[layer] @ text_features.t()).unsqueeze(0)
+                anomaly_map = (100.0 * patch_tokens[layer] @ text_features.t())
                 B, L, C = anomaly_map.shape
                 H = int(np.sqrt(L))
                 anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
                                             size=args.img_size, mode='bilinear', align_corners=True)
-                anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
+                anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1:2, :, :]
                 anomaly_maps.append(anomaly_map.cpu().numpy())
             final_score_map = np.sum(anomaly_maps, axis=0)
             
-            gt_mask_list.append(mask.squeeze().cpu().detach().numpy())
+            gt_mask_list.append(mask.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
             segment_scores.append(final_score_map)
         
     gt_list = np.array(gt_list)
+
+    gt_mask_list = np.concatenate(gt_mask_list,axis=0)
     gt_mask_list = np.asarray(gt_mask_list)
     gt_mask_list = (gt_mask_list>0).astype(np.int_)
 
+    segment_scores = [segment_scores[j][i] if len(segment_scores[j].shape) > 2 else segment_scores[j]
+            for j in range(len(segment_scores))        # 先遍历元素索引 j
+            for i in range(segment_scores[j].shape[0])  # 再遍历元素内部的样本索引 i
+            ]
+    image_scores = [image_scores[j][i] if len(image_scores[j].shape) > 2 else image_scores[j]
+            for j in range(len(image_scores))        # 先遍历元素索引 j
+            for i in range(image_scores[j].shape[0])  # 再遍历元素内部的样本索引 i
+            ]
+
+
     segment_scores = np.array(segment_scores)
     image_scores = np.array(image_scores)
+
+    
 
     segment_scores = (segment_scores - segment_scores.min()) / (segment_scores.max() - segment_scores.min())
     image_scores = (image_scores - image_scores.min()) / (image_scores.max() - image_scores.min())
