@@ -115,7 +115,7 @@ def main():
     test(args, model, test_loader, seg_mem_features, det_mem_features)
 
 
-def test(args, model, test_loader, seg_mem_features, det_mem_features):
+def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
     gt_list = []
     gt_mask_list = []
     logits_list = []
@@ -133,13 +133,14 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
-            _, text_features, seg_patch_tokens, det_patch_tokens, logits = model(image)
+            _, _, seg_patch_tokens, det_patch_tokens, logits = model(image)
             seg_patch_tokens = [p[:, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[:, 1:, :] for p in det_patch_tokens]
 
             if CLASS_INDEX[args.obj] > 0:
 
                 # few-shot, seg head
+                # * 添加多batch处理
                 anomaly_maps_few_shot = []
                 for idx, p in enumerate(seg_patch_tokens):
                     batch_cos_sim = []
@@ -173,8 +174,10 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
                     anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1:2, :, :]
                     anomaly_maps.append(anomaly_map.cpu().numpy())
                 score_map_zero = np.sum(anomaly_maps, axis=0)
-                seg_score_map_zero.extend(score_map_zero)
+                seg_score_map_zero.append(score_map_zero)
                 
+
+
             else:
                 # few-shot, det head
                 anomaly_maps_few_shot = []
@@ -192,7 +195,7 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
                     # print('anomaly_maps_few_shot.shape:', anomaly_maps_few_shot[0].shape)
                 anomaly_map_few_shot = np.sum(anomaly_maps_few_shot, axis=0)
                 score_few_det = anomaly_map_few_shot.mean(axis=(1,2,3))
-                det_image_scores_few.extend(score_few_det)
+                det_image_scores_few.append(score_few_det)
 
                 # zero-shot, det head
                 anomaly_score = 0
@@ -201,22 +204,27 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
                     anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features.t())
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score += anomaly_map.mean(dim=1)
-                det_image_scores_zero.extend(anomaly_score.cpu().numpy())
+                det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
-            gt_mask_list.extend(mask.cpu().detach().numpy())
+            # ?  在batch_size = 4 , 对于Liver数据集来说，最后会有一张image被单独留下， 可能是 .squeeze() 配合之前的’展开代码‘ 的问题
+            gt_mask_list.append(mask.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
             
             logits = torch.softmax(logits, dim=1)[:,1]
             logits_list.extend(logits.cpu().detach().numpy())
+            
 
     gt_list = np.array(gt_list)
     logits_list = np.array(logits_list)
     
-    gt_mask_list = np.array(gt_mask_list)
+    # * 多batch展平
+    gt_mask_list = np.concatenate(gt_mask_list,axis=0)
+    gt_mask_list = np.asarray(gt_mask_list)
     gt_mask_list = (gt_mask_list>0).astype(np.int_)
 
 
     if CLASS_INDEX[args.obj] > 0:
+        # * 多batch展平
         seg_score_map_zero = [seg_score_map_zero[j][i] if len(seg_score_map_zero[j].shape) > 2 else seg_score_map_zero[j]
             for j in range(len(seg_score_map_zero))        # 先遍历元素索引 j
             for i in range(seg_score_map_zero[j].shape[0])  # 再遍历元素内部的样本索引 i
@@ -240,6 +248,7 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
         roc_auc_im = roc_auc_score(gt_list, np.max(segment_scores_flatten, axis=1))
         print(f'{args.obj} AUC : {round(roc_auc_im, 4)}')
         
+        
         seg_logit_map_few = np.concatenate(seg_logit_map_few)
         seg_logit_map_few = np.array(seg_logit_map_few)
         seg_logit_map_few = (seg_logit_map_few - seg_logit_map_few.min()) / (seg_logit_map_few.max() - seg_logit_map_few.min())
@@ -250,6 +259,7 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
         return seg_roc_auc + roc_auc_im
 
     else:
+
         # * 多batch展平
         det_image_scores_zero = np.concatenate(det_image_scores_zero)
         det_image_scores_few = np.concatenate(det_image_scores_few)
@@ -264,6 +274,8 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
         print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
 
         return img_roc_auc_det
+
+
 
 
 

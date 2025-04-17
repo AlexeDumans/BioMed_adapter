@@ -262,20 +262,11 @@ def test(args, model, test_loader):
     gt_mask_list = np.asarray(gt_mask_list)
     gt_mask_list = (gt_mask_list>0).astype(np.int_)
 
-    segment_scores = [segment_scores[j][i] if len(segment_scores[j].shape) > 2 else segment_scores[j]
-            for j in range(len(segment_scores))        # 先遍历元素索引 j
-            for i in range(segment_scores[j].shape[0])  # 再遍历元素内部的样本索引 i
-            ]
-    image_scores = [image_scores[j][i] if len(image_scores[j].shape) > 2 else image_scores[j]
-            for j in range(len(image_scores))        # 先遍历元素索引 j
-            for i in range(image_scores[j].shape[0])  # 再遍历元素内部的样本索引 i
-            ]
-
+    segment_scores = np.concatenate(segment_scores)
+    image_scores = np.concatenate(image_scores)
 
     segment_scores = np.array(segment_scores)
     image_scores = np.array(image_scores)
-
-    
 
     segment_scores = (segment_scores - segment_scores.min()) / (segment_scores.max() - segment_scores.min())
     image_scores = (image_scores - image_scores.min()) / (image_scores.max() - image_scores.min())
