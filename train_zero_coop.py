@@ -124,7 +124,7 @@ def main():
                 image_label = image_label.squeeze(0).to(device)
                 for layer in range(len(det_patch_tokens)):
                     det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features[seg_idx]).unsqueeze(0)    
+                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features.t()).unsqueeze(0)    
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
@@ -150,10 +150,10 @@ def main():
                 d_bar = torch.median(torch.abs(torch.tensor(scores)-s_bar))
                 z = (torch.tensor(scores) - s_bar) / d_bar
                 tau = 1.5
-                mask = torch.abs((z - torch.mean(z))/torch.std(z)) <= tau
-                scores = torch.masked_select(torch.tensor(scores),mask)
+                emb_mask = torch.abs((z - torch.mean(z))/torch.std(z)) <= tau
+                scores = torch.masked_select(torch.tensor(scores),emb_mask)
                 scores = torch.tensor(scores).unsqueeze(1).unsqueeze(1).cuda()
-                selected_embeddings = fixed_embeddings[:,mask].mean(dim=1)
+                selected_embeddings = fixed_embeddings[:,emb_mask].mean(dim=1)
                 selected_embeddings = selected_embeddings / selected_embeddings.norm(dim=-1, keepdim=True)
 
                 fixed_embeddings = fixed_embeddings.mean(dim=1)
@@ -225,7 +225,7 @@ def test(args, model, test_loader):
         mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
 
         with torch.no_grad(), torch.cuda.amp.autocast():
-            _, text_features, seg_patch_tokens, det_patch_tokens, _ = model(image)
+            _, text_features, seg_patch_tokens, det_patch_tokens, logits = model(image)
             seg_patch_tokens = [p[:, 1:, :] for p in seg_patch_tokens]
             det_patch_tokens = [p[:, 1:, :] for p in det_patch_tokens]
             
