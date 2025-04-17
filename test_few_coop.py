@@ -155,8 +155,8 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
                     # print('anomaly_maps_few_shot.shape:', anomaly_maps_few_shot[0].shape)
                 score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
                 logit_score_few = score_map_few.mean(axis=(1,2,3))
-                seg_score_map_few.extend(score_map_few)
-                seg_logit_map_few.extend(logit_score_few)
+                seg_score_map_few.append(score_map_few)
+                seg_logit_map_few.append(logit_score_few)
 
 
                 # zero-shot, seg head
@@ -175,8 +175,6 @@ def test(args, model, test_loader, seg_mem_features, det_mem_features):
                 score_map_zero = np.sum(anomaly_maps, axis=0)
                 seg_score_map_zero.extend(score_map_zero)
                 
-
-
             else:
                 # few-shot, det head
                 anomaly_maps_few_shot = []
