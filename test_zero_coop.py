@@ -82,7 +82,7 @@ def main():
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
 
     test_dataset = MedTestDataset(args.data_path, args.obj, args.img_size)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, **kwargs)
 
     score = test(args, model, test_loader)
         
@@ -124,24 +124,29 @@ def test(args, seg_model, test_loader):
                 H = int(np.sqrt(L))
                 anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
                                             size=args.img_size, mode='bilinear', align_corners=True)
-                anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
+                anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1:2, :, :]
                 anomaly_maps.append(anomaly_map.cpu().numpy())
             final_score_map = np.sum(anomaly_maps, axis=0)
             
             gt_mask_list.extend(mask.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
-            segment_scores.extend(final_score_map)
+            segment_scores.append(final_score_map)
             
             logits = torch.softmax(logits, dim=1)[:,1]
             logits_list.extend(logits.cpu().detach().numpy())
         
         
-
+    # 
     gt_list = np.array(gt_list)
-    logits_list = np.array(logits_list)
     
+    gt_mask_list = np.concatenate(gt_mask_list,axis=0)
     gt_mask_list = np.array(gt_mask_list)
     gt_mask_list = (gt_mask_list>0).astype(np.int_)
+
+    # 
+    logits_list = np.array(logits_list)
+    segment_scores = np.concatenate(segment_scores)
+    image_scores = np.concatenate(image_scores)
 
     segment_scores = np.array(segment_scores)
     image_scores = np.array(image_scores)

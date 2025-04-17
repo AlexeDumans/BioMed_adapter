@@ -79,10 +79,10 @@ def main():
     kwargs = {'num_workers': 12, 'pin_memory': True} if use_cuda else {}
     print(args.obj)
     train_dataset = MedTrainDataset(args.data_path, args.obj, args.img_size, args.batch_size)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
 
     test_dataset = MedTestDataset(args.data_path, args.obj, args.img_size)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, **kwargs)
 
     # losses
     loss_focal = FocalLoss()
@@ -111,7 +111,7 @@ def main():
                 print('\n')
             idx += 1
 
-            image = image.to(device)
+            image = image.squeeze(0).to(device)
             seg_idx = seg_idx[0].item()
 
             with torch.cuda.amp.autocast():
@@ -121,10 +121,10 @@ def main():
 
                 # image level
                 det_loss = 0
-                image_label = image_label.to(device)
+                image_label = image_label.squeeze(0).to(device)
                 for layer in range(len(det_patch_tokens)):
                     det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features.t())    
+                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features[seg_idx]).unsqueeze(0)    
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
@@ -173,11 +173,11 @@ def main():
                 if seg_idx > 0:
                     # pixel level
                     seg_loss = 0
-                    mask = mask.to(device)
+                    mask = mask.squeeze(0).to(device)
                     mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
                     for layer in range(len(seg_patch_tokens)):
                         seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features.t())
+                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features.t()).unsqueeze(0)
                         B, L, C = anomaly_map.shape
                         H = int(np.sqrt(L))
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
@@ -218,6 +218,7 @@ def test(args, model, test_loader):
     gt_mask_list = []
     image_scores = []
     segment_scores = []
+    logits_list = []
     
     for (image, y, mask) in tqdm(test_loader):
         image = image.to(device)
@@ -255,13 +256,19 @@ def test(args, model, test_loader):
             gt_mask_list.append(mask.cpu().detach().numpy())
             gt_list.extend(y.cpu().detach().numpy())
             segment_scores.append(final_score_map)
+
+            logits = torch.softmax(logits, dim=1)[:,1]
+            logits_list.extend(logits.cpu().detach().numpy())
         
+    #        
     gt_list = np.array(gt_list)
 
     gt_mask_list = np.concatenate(gt_mask_list,axis=0)
     gt_mask_list = np.asarray(gt_mask_list)
     gt_mask_list = (gt_mask_list>0).astype(np.int_)
 
+    #
+    logits_list = np.array(logits_list)
     segment_scores = np.concatenate(segment_scores)
     image_scores = np.concatenate(image_scores)
 
@@ -273,6 +280,9 @@ def test(args, model, test_loader):
 
     img_roc_auc_det = roc_auc_score(gt_list, image_scores)
     print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
+
+    logits_roc_auc = roc_auc_score(gt_list, logits_list)
+    print(f'{args.obj} logits AUC : {round(logits_roc_auc,4)}')
 
     if CLASS_INDEX[args.obj] > 0:
         seg_roc_auc = roc_auc_score(gt_mask_list.flatten(), segment_scores.flatten())
