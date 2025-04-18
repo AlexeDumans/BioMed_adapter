@@ -70,10 +70,10 @@ def main():
     biomedclip_model.eval()
 
     # 模型添加适配器
-    model = CLIP_Inplanted(clip_model=biomedclip_model, features=args.features_list).to(device)
+    model = CLIP_Inplanted(clip_model=biomedclip_model, obj=args.obj,tokenizer=tokenizer,features=args.features_list).to(device)
     model.eval()
 
-    checkpoint = torch.load(os.path.join(f'{args.save_path}', f'{args.obj}.pth'))
+    checkpoint = torch.load(os.path.join(f'{args.save_path}', f'{args.obj}_coop.pth'))
     model.seg_adapters.load_state_dict(checkpoint["seg_adapters"])
     model.det_adapters.load_state_dict(checkpoint["det_adapters"])
     model.prompt_learner.load_state_dict(checkpoint["prompt_learner"])
@@ -82,7 +82,7 @@ def main():
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
 
     test_dataset = MedTestDataset(args.data_path, args.obj, args.img_size)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, **kwargs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
     score = test(args, model, test_loader)
         
@@ -112,7 +112,7 @@ def test(args, seg_model, test_loader):
                 anomaly_map = (100.0 * patch_tokens[layer] @ text_features.t())
                 anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
                 anomaly_score += anomaly_map.mean(dim=1)
-            image_scores.extend(anomaly_score.cpu().numpy())
+            image_scores.append(anomaly_score.cpu().numpy())
 
             # pixel
             patch_tokens = ori_seg_patch_tokens
